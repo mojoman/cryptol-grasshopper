@@ -1,0 +1,28 @@
+import "GOST2015.cry";
+
+print "Proving transform_L_transform_invL(rme)...";
+transform_L_transform_Inv_L <-
+  time (prove_print rme
+  {{ \V -> transform_invL (transform_L V) == V }});
+
+print "Proving transform_S_transform_invS(rme)...";
+transform_S_transform_invS <-
+  time (prove_print rme
+  {{ \V -> transform_invS (transform_S V) == V }});
+
+print "Proving Decrypt_Encrypt(rewriting)...";
+dec_enc <-
+  time (prove_print do {
+    unfolding ["fullRoundsDecryption", "fullRoundsEncryption"];
+    unfolding ["roundDecryption", "roundEncryption"];
+    unfolding ["expandKey", "nextBigKey"];
+    simplify (add_cryptol_defs ["ecEq"]
+             (add_prelude_eqs ["bvEq_refl"]
+             (addsimps [transform_L_transform_Inv_L,
+                        transform_S_transform_invS]
+              (cryptol_ss()))));
+    z3;
+  }
+  {{ \key msg -> fullRoundsDecryption key (fullRoundsEncryption key msg) == msg }});
+
+exit 0;
