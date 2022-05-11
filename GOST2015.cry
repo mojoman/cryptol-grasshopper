@@ -2,6 +2,9 @@ module GOST2015 where
 
 import GF28
 
+// Several types of value
+type RoundKey = [16][8]
+type State = [16][8]
 
 transform_l : [16][8] -> [8]
 transform_l V =
@@ -184,8 +187,35 @@ transform_S V = [ (sbox @ i) | i <- V]
 transform_invS: [16][8] -> [16][8]
 transform_invS V = [ (sboxInv @ i) | i <- V]
 
+
+/** Bruteforce discrete log for tklog, x != 0 */
+gf28Log : GF28 -> GF28
+gf28Log x = log x 1 2
+  where 
+        log n l a = if n != a
+                    then log n (l+1) ((a<<1)^(a>>7)*29)
+                    else l
+
+tklog_byte : GF28 -> GF28
+tklog_byte x   = if x == 0
+                 then 252
+                 else
+                      if i != 0
+                      then 252^(k @ i)^(s @ j)
+                      else 252^(k @ j)
+             where
+                 s = [1,221,146,79,147,153,11,68,214,215,78,220,152,10,69]
+                 k = [0,32,50,6,20,4,22,34,48,16,2,54,36,52,38,18,0]
+                 l = gf28Log x
+                 i = l % 17
+                 j = l / 17
+
+/* \pi transformation using Perrin's tklog */
+transform_S' : [16][8] -> [16][8]
+transform_S' V = [ tklog_byte i | i <- V]
+
 transform_F : [16][8] -> [16][8] -> [16][8] -> [2][16][8]
-transform_F k a1 a0 = [transform_L(transform_S((transform_X k a1))) ^ a0] # [a1]
+transform_F k a1 a0 = [transform_L(transform_S(transform_X k a1)) ^ a0] # [a1]
 
 transform_FF: [16][8] -> [32][8] -> [32][8]
 transform_FF c K = join ( transform_F c k1 k2 )
@@ -229,4 +259,16 @@ fullRoundsDecryption K B = transform_X (roundkeys @ 0) (acc!0)
                            roundkeys = expandKey K
 
 property gost2015Correct (key, m) = fullRoundsDecryption key (fullRoundsEncryption key m) == m
+
+property keyExpansionInjective k1 k2 =
+  if k1 != k2
+  then expandKey k1 != expandKey k2
+  else True
+
+testmsg = [0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x00,0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,0x88]
+testkey = [0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff,0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0xfe,0xdc,0xba,0x98,0x76,0x54,0x32,0x10,0x01,0x23,0x45,0x67,0x89,0xab,0xcd,0xef]
+testct = [0x7f,0x67,0x9d,0x90,0xbe,0xbc,0x24,0x30,0x5a,0x46,0x8d,0x42,0xb9,0xd4,0xed,0xcd]
+
+property enc_testPass = fullRoundsEncryption testkey testmsg == testct
+property dec_testPass = fullRoundsDecryption testkey testct  == testmsg
 
