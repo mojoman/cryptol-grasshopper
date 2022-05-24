@@ -1,7 +1,25 @@
 import "GOST2015.cry";
 
+print "Proving encrypt_lemma...";
+encrypt_lemma <-
+              time (prove_print (unint_z3 ["roundEncryption"])
+              (rewrite (cryptol_ss())
+              {{ \(state0 : State) (ks : [9]RoundKey) ->
+              (rounds where rounds = [state0] # [ roundEncryption rk s | rk <- ks | s <- rounds ]) ! 0 ==
+              (roundEncryption (ks@8) (roundEncryption (ks@7) (roundEncryption (ks@6) (roundEncryption (ks@5) (roundEncryption (ks@4) (roundEncryption (ks@3) (roundEncryption (ks@2) (roundEncryption (ks@1) (roundEncryption (ks@0) state0)))))))))
+               }}));
+
+print "Proving decrypt_lemma...";
+decrypt_lemma <-
+               time (prove_print (unint_z3 ["roundDecryption"])
+               (rewrite (cryptol_ss())
+               {{ \(state0 : State) (ks : [9]RoundKey) ->
+               (rounds where rounds = [state0] # [ roundDecryption rk s | rk <- reverse ks | s <- rounds ]) ! 0 ==
+               (roundDecryption (ks@0) (roundDecryption (ks@1) (roundDecryption (ks@2) (roundDecryption (ks@3) (roundDecryption (ks@4) (roundDecryption (ks@5) (roundDecryption (ks@6) (roundDecryption (ks@7) (roundDecryption (ks@8) state0)))))))))
+               }}));
+
 print "Proving transform_L_transform_invL(rme)...";
-transform_L_transform_Inv_L <-
+transform_L_transform_InvL <-
   time (prove_print rme
   {{ \V -> transform_invL (transform_L V) == V }});
 
@@ -10,18 +28,28 @@ transform_S_transform_invS <-
   time (prove_print rme
   {{ \V -> transform_invS (transform_S V) == V }});
 
+print "Proving transform_X_cancel(rme)...";
+transform_X_cancel <-
+  time (prove_print rme
+  {{ \rk s -> transform_X rk (transform_X rk s) == s }});
+
 print "Proving Decrypt_Encrypt(rewriting)...";
 dec_enc <-
   time (prove_print do {
-    unfolding ["fullRoundsDecryption", "fullRoundsEncryption"];
+    unfolding ["fullRoundsEncryption", "fullRoundsDecryption"];
+    simplify (addsimps [encrypt_lemma, decrypt_lemma]
+             (cryptol_ss()));
     unfolding ["roundDecryption", "roundEncryption"];
-    unfolding ["expandKey", "nextBigKey"];
     simplify (add_cryptol_defs ["ecEq"]
-             (add_prelude_eqs ["bvEq_refl"]
-             (addsimps [transform_L_transform_Inv_L,
-                        transform_S_transform_invS]
+             (add_prelude_defs ["bvEq_refl",
+                              "ite", "at", "vecEq",
+                              "intLe"]
+             (addsimps [transform_L_transform_InvL,
+                        transform_S_transform_invS,
+                        transform_X_cancel]
               (cryptol_ss()))));
-    z3;
+    print_goal;
+    trivial;
   }
   {{ \key msg -> fullRoundsDecryption key (fullRoundsEncryption key msg) == msg }});
 
